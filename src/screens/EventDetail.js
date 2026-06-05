@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,8 +12,12 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
-import mockComments from '../data/mockComments';
+import { useRouter } from 'expo-router';
+import DataManager from '../lib/DataManager';
 import PollCard from '../components/PollCard';
+import CommentItem from '../components/CommentItem';
+
+const CURRENT_USER_ID = 'user_demo_123';
 
 const formatDate = (dateString) => {
   const date = new Date(dateString);
@@ -30,31 +34,58 @@ const formatTime = (dateString) => {
   return date.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
 };
 
-const formatRelativeDate = (dateString) => {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now - date;
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffHours < 1) return 'Hace unos minutos';
-  if (diffHours < 24) return `Hace ${diffHours}h`;
-  if (diffDays < 7) return `Hace ${diffDays}d`;
-  return date.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' });
-};
-
 export default function EventDetail({ event }) {
+  const router = useRouter();
   const [liked, setLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(Math.floor(Math.random() * 50) + 10);
+  const [likeCount, setLikeCount] = useState(0);
   const [comment, setComment] = useState('');
-  const [comments, setComments] = useState(
-    mockComments.filter(c => c.evento_id === event.id).sort((a, b) => b.score - a.score)
-  );
+  const [comments, setComments] = useState([]);
   const [sending, setSending] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
   const commentsRef = useRef(null);
 
-  const handleLike = () => {
-    Alert.alert('', 'Debes iniciar sesión para interactuar.');
+  const handleGoBack = () => {
+    router.back();
+  };
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [loadedComments, userLiked, count] = await Promise.all([
+          DataManager.getCommentsByEvent(event.id),
+          DataManager.hasUserLiked(event.id, CURRENT_USER_ID),
+          DataManager.getLikeCount(event.id)
+        ]);
+        setComments(loadedComments);
+        setLiked(userLiked);
+        setLikeCount(count);
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setLoadingData(false);
+      }
+    };
+    loadData();
+  }, [event.id]);
+
+  const handleLike = async () => {
+    if (!liked) {
+      try {
+        const result = await DataManager.toggleLike(event.id, CURRENT_USER_ID);
+        setLiked(result.liked);
+        setLikeCount(result.likeCount);
+      } catch (error) {
+        Alert.alert('', 'No se pudo completar la acción. Intenta nuevamente.');
+      }
+    } else {
+      try {
+        const result = await DataManager.toggleLike(event.id, CURRENT_USER_ID);
+        setLiked(result.liked);
+        setLikeCount(result.likeCount);
+      } catch (error) {
+        Alert.alert('', 'No se pudo completar la acción. Intenta nuevamente.');
+      }
+    }
   };
 
   const handleCommentPress = () => {
@@ -71,42 +102,28 @@ export default function EventDetail({ event }) {
     }
   };
 
-  const handleSendComment = () => {
+  const handleSendComment = async () => {
     const trimmedComment = comment.trim();
     if (!trimmedComment) return;
 
     setSending(true);
 
-    setTimeout(() => {
-      const shouldFail = Math.random() < 0.1;
-
-      if (shouldFail) {
-        Alert.alert('', 'No se pudo completar la acción. Intenta nuevamente.');
-        setSending(false);
-        return;
-      }
-
-      const newComment = {
-        id: `c${Date.now()}`,
-        evento_id: event.id,
-        autor_id: 'current_user',
-        autor_username: 'tu_usuario',
-        autor_avatar: null,
-        contenido: trimmedComment,
-        score: 0,
-        created_at: new Date().toISOString(),
-      };
-
+    try {
+      const newComment = await DataManager.addComment(
+        event.id,
+        trimmedComment,
+        'tu_usuario'
+      );
       setComments(prev => [newComment, ...prev]);
       setComment('');
+    } catch (error) {
+      Alert.alert('', 'No se pudo completar la acción. Intenta nuevamente.');
+    } finally {
       setSending(false);
-    }, 800);
+    }
   };
 
   const isSubmitDisabled = !comment.trim() || sending;
-
-  const eventComments = comments.filter(c => c.evento_id === event.id);
-  const commentWithPoll = eventComments.find(c => c.id === 'c1a2b3c4-1111-2222-3333-444455556666');
 
   return (
     <KeyboardAvoidingView
@@ -114,11 +131,16 @@ export default function EventDetail({ event }) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView ref={commentsRef} contentContainerStyle={styles.scrollContent}>
-        <Image
-          source={{ uri: event.imagen_url }}
-          style={styles.image}
-          resizeMode="cover"
-        />
+        <View style={styles.imageContainer}>
+          <Image
+            source={{ uri: event.imagen_url }}
+            style={styles.image}
+            resizeMode="cover"
+          />
+          <Pressable style={styles.backButton} onPress={handleGoBack}>
+            <Text style={styles.backButtonText}>← Volver</Text>
+          </Pressable>
+        </View>
 
         <View style={styles.content}>
           <View style={styles.header}>
@@ -160,13 +182,13 @@ export default function EventDetail({ event }) {
             >
               <Text style={styles.actionIcon}>{liked ? '♥' : '♡'}</Text>
               <Text style={[styles.actionText, liked && styles.actionTextActive]}>
-                {likeCount + (liked ? 1 : 0)}
+                {likeCount}
               </Text>
             </Pressable>
 
             <Pressable style={styles.actionButton} onPress={handleCommentPress}>
               <Text style={styles.actionIcon}>💬</Text>
-              <Text style={styles.actionText}>{eventComments.length}</Text>
+              <Text style={styles.actionText}>{comments.length}</Text>
             </Pressable>
 
             <Pressable style={styles.actionButton} onPress={handleShare}>
@@ -201,26 +223,11 @@ export default function EventDetail({ event }) {
             </Text>
 
             <View style={styles.commentsList}>
-              {eventComments.map((item) => (
-                <View key={item.id} style={styles.commentItem}>
-                  <View style={styles.commentHeader}>
-                    <View style={styles.avatarPlaceholder}>
-                      <Text style={styles.avatarText}>
-                        {item.autor_username.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                    <View style={styles.commentMeta}>
-                      <Text style={styles.username}>{item.autor_username}</Text>
-                      <Text style={styles.relativeDate}>{formatRelativeDate(item.created_at)}</Text>
-                    </View>
-                    <View style={styles.scoreContainer}>
-                      <Text style={styles.scoreIcon}>★</Text>
-                      <Text style={styles.scoreText}>{item.score}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.commentContent}>{item.contenido}</Text>
+              {comments.map((commentItem) => (
+                <View key={commentItem.id}>
+                  <CommentItem comment={commentItem} />
 
-                  {item.id === 'c1a2b3c4-1111-2222-3333-444455556666' && (
+                  {commentItem.id === 'c1a2b3c4-1111-2222-3333-444455556666' && (
                     <PollCard
                       pregunta="¿Qué género debería predominar en los próximos eventos?"
                       opciones={[
@@ -229,6 +236,7 @@ export default function EventDetail({ event }) {
                         { texto: 'Electrónica', votos: 31 },
                         { texto: 'Jazz', votos: 12 },
                       ]}
+                      encuestaId="poll_staff_1"
                     />
                   )}
                 </View>
@@ -249,10 +257,28 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 40,
   },
+  imageContainer: {
+    position: 'relative',
+  },
   image: {
     width: '100%',
     height: 250,
     backgroundColor: '#1a1a1a',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 40,
+    left: 16,
+    backgroundColor: 'rgba(15, 15, 15, 0.8)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    zIndex: 10,
+  },
+  backButtonText: {
+    fontFamily: 'Montserrat-Bold',
+    fontSize: 14,
+    color: '#ffffff',
   },
   content: {
     padding: 16,
@@ -385,62 +411,5 @@ const styles = StyleSheet.create({
   },
   commentsList: {
     gap: 16,
-  },
-  commentItem: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    padding: 14,
-  },
-  commentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  avatarPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#2a2a2a',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  avatarText: {
-    fontFamily: 'Montserrat-Bold',
-    fontSize: 14,
-    color: '#E5b0cb',
-  },
-  commentMeta: {
-    flex: 1,
-  },
-  username: {
-    fontFamily: 'Montserrat-Bold',
-    fontSize: 13,
-    color: '#ffffff',
-  },
-  relativeDate: {
-    fontFamily: 'Montserrat',
-    fontSize: 11,
-    color: '#888888',
-  },
-  scoreContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  scoreIcon: {
-    fontSize: 14,
-    color: '#ffd2fb',
-    marginRight: 4,
-  },
-  scoreText: {
-    fontFamily: 'Montserrat',
-    fontSize: 13,
-    color: '#ffd2fb',
-  },
-  commentContent: {
-    fontFamily: 'Montserrat',
-    fontSize: 14,
-    color: '#ffffff',
-    lineHeight: 20,
   },
 });

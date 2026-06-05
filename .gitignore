@@ -42,3 +42,8 @@ example
 # generated native folders
 /ios
 /android
+
+# Archivos de configuración del agente (NO subir a GitHub)
+spec.md
+AGENTS.md
+skills.md

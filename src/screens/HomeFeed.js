@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { View, FlatList, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import mockEvents from '../data/mockEvents';
+import DataManager from '../lib/DataManager';
 import EventCard from '../components/EventCard';
 import SkeletonCard from '../components/SkeletonCard';
 import FilterBar, { getDateRange } from '../components/FilterBar';
@@ -63,22 +63,39 @@ export default function HomeFeed() {
   const flatListRef = useRef(null);
 
   useEffect(() => {
-    setLoading(true);
-    setTimeout(() => {
-      const sortedEvents = [...mockEvents].sort(
-        (a, b) => new Date(a.fecha_inicio) - new Date(b.fecha_inicio)
-      );
-      const filtered = applyFilters(sortedEvents, filters);
-      const initialEvents = filtered.slice(0, ITEMS_PER_PAGE);
+    const loadSavedFilters = async () => {
+      const savedFilters = await DataManager.loadFilters();
+      if (savedFilters) {
+        setFilters(savedFilters);
+      }
+    };
+    loadSavedFilters();
+  }, []);
 
-      setFilteredEvents(filtered);
-      setEvents(initialEvents);
-      setPage(0);
-      setHasMore(filtered.length > ITEMS_PER_PAGE);
-      setLoading(false);
+  useEffect(() => {
+    const loadEvents = async () => {
+      setLoading(true);
+      try {
+        const allEvents = await DataManager.getEvents();
+        const filtered = applyFilters(allEvents, filters);
+        const initialEvents = filtered.slice(0, ITEMS_PER_PAGE);
 
-      flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-    }, 500);
+        setFilteredEvents(filtered);
+        setEvents(initialEvents);
+        setPage(0);
+        setHasMore(filtered.length > ITEMS_PER_PAGE);
+      } catch (error) {
+        console.error('Error loading events:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadEvents();
+  }, [filters]);
+
+  useEffect(() => {
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, [filters]);
 
   const loadMore = useCallback(() => {
@@ -108,12 +125,13 @@ export default function HomeFeed() {
     }
   }, [loading, hasMore, loadMore]);
 
-  const handleFilterChange = useCallback((newFilters) => {
+  const handleFilterChange = useCallback(async (newFilters) => {
     setFilters(newFilters);
+    await DataManager.saveFilters(newFilters);
   }, []);
 
   const renderItem = useCallback(({ item }) => (
-    <EventCard event={item} onPress={() => {}} />
+    <EventCard event={item} />
   ), []);
 
   const renderFooter = () => {

@@ -1,24 +1,45 @@
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import DataManager from '../lib/DataManager';
 
-export default function PollCard({ pregunta, opciones: initialOpciones }) {
+const CURRENT_USER_ID = 'user_demo_123';
+
+export default function PollCard({ pregunta, opciones: initialOpciones, encuestaId }) {
   const [opciones, setOpciones] = useState(initialOpciones);
   const [votado, setVotado] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadPollData = async () => {
+      try {
+        const pollData = await DataManager.initPoll(encuestaId, initialOpciones);
+        setOpciones(pollData.opciones);
+
+        const { userVote } = await DataManager.getPollData(encuestaId, CURRENT_USER_ID);
+        setVotado(userVote);
+      } catch (error) {
+        console.error('Error loading poll:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPollData();
+  }, [encuestaId]);
+
+  const handleVote = async (index) => {
+    try {
+      const result = await DataManager.votePoll(encuestaId, index, CURRENT_USER_ID);
+      setOpciones(result.opciones);
+      setVotado(result.userVote);
+    } catch (error) {
+      console.error('Error voting:', error);
+    }
+  };
+
   const totalVotos = opciones.reduce((sum, opt) => sum + opt.votos, 0);
 
-  const handleVote = (index) => {
-    if (votado !== null) return;
-
-    const newOpciones = opciones.map((opt, i) => {
-      if (i === index) {
-        return { ...opt, votos: opt.votos + 1 };
-      }
-      return opt;
-    });
-
-    setOpciones(newOpciones);
-    setVotado(index);
-  };
+  if (loading) return null;
 
   return (
     <View style={styles.container}>

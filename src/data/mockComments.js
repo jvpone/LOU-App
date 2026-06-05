@@ -99,6 +99,26 @@ const mockComments = [
     score: 19,
     created_at: "2026-05-29T22:00:00"
   },
+  {
+    id: "r1a2b3c4-1111-2222-3333-444455556666",
+    parent_id: "c1a2b3c4-1111-2222-3333-444455556666",
+    evento_id: 1,
+    autor_id: "u2a2b3c4-1111-2222-3333-444455556662",
+    autor_username: "melomano_conce",
+    contenido: "Totalmente de acuerdo, la banda es increíble!",
+    score: 5,
+    created_at: "2026-06-01T11:00:00"
+  },
+  {
+    id: "r2a2b3c4-1111-2222-3333-444455556667",
+    parent_id: "c1a2b3c4-1111-2222-3333-444455556666",
+    evento_id: 1,
+    autor_id: "u3a2b3c4-1111-2222-3333-444455556663",
+    autor_username: "dj_electronica",
+    contenido: "Yo también voy a ir, nos vemos allá!",
+    score: 3,
+    created_at: "2026-06-01T12:00:00"
+  },
 ];
 
 export default mockComments;
